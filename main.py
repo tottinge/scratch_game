@@ -39,14 +39,20 @@ class Point(object):
 
 
 class Room(object):
+    id_assigned = 0
+    @classmethod
+    def next_id(cls):
+        cls.id_assigned += 1
+        return cls.id_assigned
     def __init__(self, origin, width, height, connections=None):
         self.origin = origin
         self.width = width
         self.height = height
         self.connected = connections or []
+        self.id = self.next_id()
 
     def __repr__(self):
-        return f"Room({self.origin.x},{self.origin.y}) width {self.width}, height{self.height}"
+        return f"Room {self.id} ({self.origin.x},{self.origin.y}) w:{self.width}, h:{self.height}"
 
     def connect_to(self, other):
         self.connected.append(other)
@@ -86,11 +92,12 @@ def weird_assed_generation(x_extent, y_extent, initial_rooms):
     )
     for(d, a, b) in workspace:
         print(f"{d} between {a} and {b}")
-        possible_diameter = d//2.5
+        possible_diameter = d//3
         if possible_diameter < 2:
             print(f"Too close! {a}<-{possible_diameter}->{b}")
             continue
         room = Room(Point(*a), possible_diameter, possible_diameter)
+        print(f"Room is {room}")
         room.connect_to(b)
         yield room
 
@@ -105,12 +112,15 @@ def render_map(roomset):
     import pygame
     black = (0,0,0)
     green = (0,128,0)
+    blue = (0, 0, 255)
     pygame.init()
     display = pygame.display.set_mode((200,400))
     display.fill(black)
     for (origin,room) in roomset.items():
         rect_of_room = rect_centered_on(origin.as_tuple(), room.width, room.height)
-        pygame.draw.rect(display, green, rect_of_room)
+        pygame.draw.rect(display, green, rect_of_room, 3)
+        for connection in room.connected:
+            pygame.draw.line(display, blue, room.origin.as_tuple(), connection, 2)
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -118,7 +128,7 @@ def render_map(roomset):
         pygame.display.update()
 
 if __name__ == '__main__':
-    indexed = { room.origin:room for room in weird_assed_generation(200,400, 10) }
+    indexed = { room.origin:room for room in weird_assed_generation(200,400, 4) }
     for (origin,room) in indexed.items():
         print(room)
         print(f"    {room.connected}")
