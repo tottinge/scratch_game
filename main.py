@@ -35,19 +35,31 @@ class Point(object):
         return hash(self) == hash(other)
 
     def as_tuple(self):
-        return self.x,self.y
+        return self.x, self.y
+
+
 
 
 class Room(object):
     id_assigned = 0
+
     @classmethod
     def next_id(cls):
         cls.id_assigned += 1
         return cls.id_assigned
+
+    @staticmethod
+    def rect_centered_on(center_point, width, height):
+        x = center_point.x - .5 * width
+        y = center_point.y - .5 * height
+        return Point(x,y)
+
+
     def __init__(self, origin, width, height, connections=None):
         self.origin = origin
         self.width = width
         self.height = height
+        self.upperleft = self.rect_centered_on(origin, width, height)
         self.connected = connections or []
         self.id = self.next_id()
 
@@ -56,9 +68,23 @@ class Room(object):
 
     def connect_to(self, other):
         self.connected.append(other)
+        other.connected.append(self)
+
+    def available(self):
+        return len(self.connected) < 3
+
+    def reachable(self, other, exclude=None):
+        connected_ids = [c.id for c in self.connected]
+        print(f"From {self.id} can we reach {other.id} via {connected_ids}")
+        if self.id == other.id:
+            return True
+        return any(item.reachable(other, self) for item in self.connected if item != exclude)
 
     def overlaps_with(self, other):
         pass
+
+    def rect_bounds(self):
+        return self.upperleft.x, self.upperleft.y, self.width, self.height
 
     def periphery(self):
         left, top = self.origin.x, self.origin.y
@@ -79,58 +105,76 @@ class Room(object):
                    )
 
 
+class PointGen(object):
+    def __init__(self, x_extent, y_extent):
+
+        x_offset = x_extent / 10
+        self.x_bounds = (0+x_offset, x_extent-x_offset)
+
+        y_offset = y_extent / 10
+        self.y_bounds = (0+y_offset, y_extent-y_offset)
+
+    def selection(self):
+        from random import randint
+        return Point(randint(*self.x_bounds),randint(*self.y_bounds))
+
+
 def weird_assed_generation(x_extent, y_extent, initial_rooms):
-    from random import randint
     from itertools import combinations
+
+    point_gen = PointGen(x_extent, y_extent)
+
     points = [
-        (randint(0,x_extent),randint(0,y_extent))
-        for i in range(initial_rooms)
+        point_gen.selection()
+        for _ in range(initial_rooms)
     ]
-    workspace = sorted(
-        (Point(*left).distance_to(Point(*right)), left, right)
-        for (left,right) in combinations(points, 2)
+    distance = (
+        (left.distance_to(right), left, right)
+        for (left, right) in combinations(points, 2)
     )
-    for(d, a, b) in workspace:
-        print(f"{d} between {a} and {b}")
-        possible_diameter = d//3
-        if possible_diameter < 2:
-            print(f"Too close! {a}<-{possible_diameter}->{b}")
-            continue
-        room = Room(Point(*a), possible_diameter, possible_diameter)
-        print(f"Room is {room}")
-        room.connect_to(b)
-        yield room
 
-def rect_centered_on( center, width, height):
-    from pygame import Rect
-    centerx, centery = center
-    left = max(0, centerx - width/2)
-    top = max(0, centery - height/2)
-    return Rect(left,top, width,height)
+    workspace = sorted(distance, key = lambda item: item[0])
+    rooms = {}
+    for (d, a, b) in workspace:
+        possible_diameter = int(d*.8)
+        room_a = rooms.setdefault(a, Room(a, possible_diameter, possible_diameter))
+        room_b = rooms.setdefault(b, Room(b, possible_diameter, possible_diameter))
+        if not room_a.reachable(room_b):
+            print(f"Connecting {room_a.id} to {room_b.id}.")
+            room_a.connect_to(room_b)
+    return rooms.values()
 
-def render_map(roomset):
-    import pygame
-    black = (0,0,0)
-    green = (0,128,0)
-    blue = (0, 0, 255)
+
+import pygame
+
+black = (0, 0, 0)
+green = (0, 128, 0)
+blue = (0, 0, 255)
+
+
+def render_map(roomset, width, height):
     pygame.init()
-    display = pygame.display.set_mode((200,400))
+    display = pygame.display.set_mode((width, height))
     display.fill(black)
-    for (origin,room) in roomset.items():
-        rect_of_room = rect_centered_on(origin.as_tuple(), room.width, room.height)
+    for (room) in roomset:
+        bounds = room.rect_bounds()
+        print(f"{room.id} {bounds}")
+        rect_of_room = pygame.Rect(*bounds)
         pygame.draw.rect(display, green, rect_of_room, 3)
+        start = room.origin.as_tuple()
         for connection in room.connected:
-            pygame.draw.line(display, blue, room.origin.as_tuple(), connection, 2)
+            end = connection.origin.as_tuple()
+            pygame.draw.line(display, blue, start, end, 2)
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return
         pygame.display.update()
 
+
 if __name__ == '__main__':
-    indexed = { room.origin:room for room in weird_assed_generation(200,400, 4) }
-    for (origin,room) in indexed.items():
-        print(room)
-        print(f"    {room.connected}")
-        print()
-    render_map(indexed)
+    width = 600
+    height = 400
+    for i in range(5):
+        rooms = weird_assed_generation(width, height, 20)
+        render_map(rooms, width, height)
